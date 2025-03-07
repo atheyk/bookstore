@@ -6,6 +6,11 @@ import sqlite3
 app = Flask(__name__)
 DB_PATH = "bookstore.db"
 
+# Home route to confirm API is working
+@app.route('/')
+def home():
+    return "Bookstore API Connection Successful", 200
+
 # Database connection
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
