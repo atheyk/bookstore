@@ -1,16 +1,18 @@
 from flask import Flask, request, jsonify
 import sqlite3
 
+
+# Adding comment to force Render redeployment - ignore
 app = Flask(__name__)
 DB_PATH = "bookstore.db"
 
-#Database connection
+# Database connection
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
-#View book inventory
+# View book inventory
 @app.route('/inventory', methods=['GET'])
 def get_inventory():
     conn = get_db_connection()
@@ -18,7 +20,7 @@ def get_inventory():
     conn.close()
     return jsonify([dict(book) for book in books])
 
-#Check stock prior to transaction
+# Check stock prior to transaction
 @app.route('/check_stock/<int:book_id>', methods=['GET'])
 def check_stock(book_id):
     conn = get_db_connection()
@@ -30,7 +32,7 @@ def check_stock(book_id):
     else:
         return jsonify({"error": "Book not found"}), 404
 
-#Start Transaction
+# Start Transaction
 @app.route('/place_order', methods=['POST'])
 def place_order():
     data = request.json  # Expected: { "customer_id": 1, "book_id": 2, "quantity": 1 }
