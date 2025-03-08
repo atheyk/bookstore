@@ -1,6 +1,5 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 import sqlite3
-
 
 # Adding comment to force Render redeployment - ignore
 app = Flask(__name__)
@@ -31,7 +30,7 @@ def check_stock(book_id):
     conn = get_db_connection()
     book = conn.execute("SELECT stock_quantity FROM books WHERE id = ?", (book_id,)).fetchone()
     conn.close()
-    
+
     if book:
         return jsonify({"book_id": book_id, "stock_quantity": book["stock_quantity"]})
     else:
@@ -40,7 +39,7 @@ def check_stock(book_id):
 # Start Transaction
 @app.route('/place_order', methods=['POST'])
 def place_order():
-    data = request.json  # Expected: { "customer_id": 1, "book_id": 2, "quantity": 1 }
+    data = request.json
     customer_id, book_id, quantity = data["customer_id"], data["book_id"], data["quantity"]
 
     conn = get_db_connection()
@@ -48,35 +47,35 @@ def place_order():
 
     try:
         cursor.execute("BEGIN TRANSACTION;")
-        
+
         # Check Stock
         cursor.execute("SELECT stock_quantity FROM books WHERE id = ?", (book_id,))
         book = cursor.fetchone()
-        
+
         if not book or book["stock_quantity"] < quantity:
             return jsonify({"error": "Insufficient stock"}), 400
-        
+
         # Deduct Stock
         cursor.execute("UPDATE books SET stock_quantity = stock_quantity - ? WHERE id = ?", (quantity, book_id))
-        
+
         # Insert Order
-        cursor.execute("INSERT INTO customer_orders (customer_id, book_id, quantity) VALUES (?, ?, ?)", 
+        cursor.execute("INSERT INTO customer_orders (customer_id, book_id, quantity) VALUES (?, ?, ?)",
                        (customer_id, book_id, quantity))
-        
-        conn.commit()  # COMMIT if transaction is successful
+
+        conn.commit()
         return jsonify({"message": "Order placed successfully"}), 201
-    
+
     except Exception as e:
-        conn.rollback()  # ROLLBACK if transaction failed
+        conn.rollback()
         return jsonify({"error": str(e)}), 500
-    
+
     finally:
         conn.close()
 
 # Record the transaction
 @app.route('/record_sale', methods=['POST'])
 def record_sale():
-    data = request.json  # Expected: { "order_id": 1, "book_id": 2, "quantity": 1, "total_price": 19.99 }
+    data = request.json
     order_id, book_id, quantity, total_price = data["order_id"], data["book_id"], data["quantity"], data["total_price"]
 
     conn = get_db_connection()
@@ -84,20 +83,29 @@ def record_sale():
 
     try:
         cursor.execute("BEGIN TRANSACTION;")
-        
+
         # Insert the sales record
-        cursor.execute("INSERT INTO sales (order_id, book_id, quantity_sold, total_price) VALUES (?, ?, ?, ?)", 
+        cursor.execute("INSERT INTO sales (order_id, book_id, quantity_sold, total_price) VALUES (?, ?, ?, ?)",
                        (order_id, book_id, quantity, total_price))
-        
+
         conn.commit()
         return jsonify({"message": "Sale recorded successfully"}), 201
-    
+
     except Exception as e:
         conn.rollback()
         return jsonify({"error": str(e)}), 500
-    
+
     finally:
         conn.close()
+
+# Adding a database download endpoint for the API here.. I went to work on the manufacturer sales and the inventory table was missing. Using this to download the last good file from Render - You guys can also use it to download the most up to date db file if you need it (Instead of having to go to GIT)
+
+@app.route('/download-db', methods=['GET'])
+def download_db():
+    try:
+        return send_file(DB_PATH, as_attachment=True)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
