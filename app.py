@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, send_file
 import sqlite3
+import os
 
-# Adding comment to force Render redeployment - ignore
 app = Flask(__name__)
 DB_PATH = "bookstore.db"
 
@@ -131,17 +131,23 @@ def submit_feedback():
     finally:
         conn.close()
 
-# Retrieve Feedback for a Specific Book
+# Retrieve Feedback Endpoint (All Feedback or Specific Book)
+@app.route('/feedback', methods=['GET'])
 @app.route('/feedback/<int:book_id>', methods=['GET'])
-def get_feedback(book_id):
+def get_feedback(book_id=None):
     conn = get_db_connection()
-    feedback = conn.execute("SELECT * FROM UserFeedback WHERE book_id = ?", (book_id,)).fetchall()
+
+    if book_id:
+        feedback = conn.execute("SELECT * FROM UserFeedback WHERE book_id = ?", (book_id,)).fetchall()
+    else:
+        feedback = conn.execute("SELECT * FROM UserFeedback").fetchall()
+
     conn.close()
 
     if feedback:
         return jsonify([dict(entry) for entry in feedback])
     else:
-        return jsonify({"message": "No feedback found for this book."}), 404
+        return jsonify({"message": "No feedback found."}), 404
 
 # Database download endpoint
 @app.route('/download-db', methods=['GET'])
@@ -152,4 +158,5 @@ def download_db():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
