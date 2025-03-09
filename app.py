@@ -98,8 +98,52 @@ def record_sale():
     finally:
         conn.close()
 
-# Adding a database download endpoint for the API here.. I went to work on the manufacturer sales and the inventory table was missing. Using this to download the last good file from Render - You guys can also use it to download the most up to date db file if you need it (Instead of having to go to GIT)
+# Feedback Submission Endpoint
+@app.route('/submit-feedback', methods=['POST'])
+def submit_feedback():
+    data = request.json
+    book_id = data.get("book_id")
+    rating = data.get("rating")
+    comments = data.get("comments")
 
+    if not book_id or not rating or not comments:
+        return jsonify({"error": "All fields are required: book_id, rating, and comments"}), 400
+
+    if not 1 <= int(rating) <= 5:
+        return jsonify({"error": "Rating must be between 1 and 5"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            INSERT INTO UserFeedback (book_id, rating, comments, feedback_date)
+            VALUES (?, ?, ?, DATE('now'))
+        """, (book_id, rating, comments))
+
+        conn.commit()
+        return jsonify({"message": "Feedback submitted successfully!"}), 201
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        conn.close()
+
+# Retrieve Feedback for a Specific Book
+@app.route('/feedback/<int:book_id>', methods=['GET'])
+def get_feedback(book_id):
+    conn = get_db_connection()
+    feedback = conn.execute("SELECT * FROM UserFeedback WHERE book_id = ?", (book_id,)).fetchall()
+    conn.close()
+
+    if feedback:
+        return jsonify([dict(entry) for entry in feedback])
+    else:
+        return jsonify({"message": "No feedback found for this book."}), 404
+
+# Database download endpoint
 @app.route('/download-db', methods=['GET'])
 def download_db():
     try:
