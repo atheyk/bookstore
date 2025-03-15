@@ -34,19 +34,21 @@ def upload_cover():
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
 
-    # Sanitize filename and rename using book_id for consistency
-    filename = f"book_{book_id}_{secure_filename(file.filename)}"
+    # Normalize file extensions and rename using book_id for consistency
+    file_extension = file.filename.rsplit('.', 1)[-1].lower()
+    filename = f"book_{book_id}_{secure_filename(file.filename.rsplit('.', 1)[0])}.{file_extension}"
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(file_path)
 
-    # Update the database with the file path
+    # Update the database with the relative file path
+    relative_path = f'static/uploads/{filename}'
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
-        cursor.execute("UPDATE books SET cover_image_path = ? WHERE id = ?", (file_path, book_id))
+        cursor.execute("UPDATE books SET cover_image_path = ? WHERE id = ?", (relative_path, book_id))
         conn.commit()
-        return jsonify({'cover_image_path': file_path})
+        return jsonify({'cover_image_path': relative_path})
 
     except Exception as e:
         conn.rollback()
@@ -59,6 +61,9 @@ def upload_cover():
 @app.route('/cover-image/<filename>')
 def get_cover_image(filename):
     filename = secure_filename(filename)
+    image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if not os.path.exists(image_path):
+        return jsonify({"error": "Image not found"}), 404
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 # View book inventory with cover image URLs
@@ -69,13 +74,17 @@ def get_inventory():
     conn.close()
 
     # Add URLs for each book cover image
+    inventory = []
     for book in books:
-        if book['cover_image_path']:
-            book['cover_image_url'] = request.host_url + 'cover-image/' + os.path.basename(book['cover_image_path'])
+        book_dict = dict(book)  # Convert sqlite3.Row to dict
+        if book_dict['cover_image_path'] and os.path.isfile(book_dict['cover_image_path']):
+            book_dict['cover_image_url'] = request.host_url + 'cover-image/' + os.path.basename(book_dict['cover_image_path'])
         else:
-            book['cover_image_url'] = None
+            book_dict['cover_image_url'] = None
 
-    return jsonify([dict(book) for book in books])
+        inventory.append(book_dict)
+
+    return jsonify(inventory)
 
 # Check stock prior to transaction
 @app.route('/check_stock/<int:book_id>', methods=['GET'])
