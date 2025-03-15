@@ -1,9 +1,12 @@
 from flask import Flask, request, jsonify, send_file, send_from_directory
+from flask_cors import CORS
 import sqlite3
 import os
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "https://bookstore-website-mxovknmqp-shakirrasykes-projects.vercel.app"}})
+
 DB_PATH = "bookstore.db"
 UPLOAD_FOLDER = 'C:/Users/keena/OneDrive/Documents/Colorado Technical University/CS492/Bookstore/Images'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -11,18 +14,15 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 # Ensure the uploads folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Home route to confirm API is working
 @app.route('/')
 def home():
     return "Bookstore API Connection Successful", 200
 
-# Database connection
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
-# Image Upload Endpoint
 @app.route('/upload-cover', methods=['POST'])
 def upload_cover():
     if 'file' not in request.files or 'book_id' not in request.form:
@@ -34,13 +34,11 @@ def upload_cover():
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
 
-    # Normalize file extensions and rename using book_id for consistency
     file_extension = file.filename.rsplit('.', 1)[-1].lower()
     filename = f"book_{book_id}_{secure_filename(file.filename.rsplit('.', 1)[0])}.{file_extension}"
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(file_path)
 
-    # Update the database with the relative file path
     relative_path = f'static/uploads/{filename}'
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -57,7 +55,6 @@ def upload_cover():
     finally:
         conn.close()
 
-# Provide Book Cover Images
 @app.route('/cover-image/<filename>')
 def get_cover_image(filename):
     filename = secure_filename(filename)
@@ -66,17 +63,15 @@ def get_cover_image(filename):
         return jsonify({"error": "Image not found"}), 404
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-# View book inventory with cover image URLs
 @app.route('/inventory', methods=['GET'])
 def get_inventory():
     conn = get_db_connection()
     books = conn.execute("SELECT id, book_title, stock_quantity, cover_image_path FROM books").fetchall()
     conn.close()
 
-    # Add URLs for each book cover image
     inventory = []
     for book in books:
-        book_dict = dict(book)  # Convert sqlite3.Row to dict
+        book_dict = dict(book)
         if book_dict['cover_image_path'] and os.path.isfile(book_dict['cover_image_path']):
             book_dict['cover_image_url'] = request.host_url + 'cover-image/' + os.path.basename(book_dict['cover_image_path'])
         else:
@@ -86,7 +81,6 @@ def get_inventory():
 
     return jsonify(inventory)
 
-# Check stock prior to transaction
 @app.route('/check_stock/<int:book_id>', methods=['GET'])
 def check_stock(book_id):
     conn = get_db_connection()
@@ -98,7 +92,6 @@ def check_stock(book_id):
     else:
         return jsonify({"error": "Book not found"}), 404
 
-# Start Transaction
 @app.route('/place_order', methods=['POST'])
 def place_order():
     data = request.json
@@ -110,17 +103,14 @@ def place_order():
     try:
         cursor.execute("BEGIN TRANSACTION;")
 
-        # Check Stock
         cursor.execute("SELECT stock_quantity FROM books WHERE id = ?", (book_id,))
         book = cursor.fetchone()
 
         if not book or book["stock_quantity"] < quantity:
             return jsonify({"error": "Insufficient stock"}), 400
 
-        # Deduct Stock
         cursor.execute("UPDATE books SET stock_quantity = stock_quantity - ? WHERE id = ?", (quantity, book_id))
 
-        # Insert Order
         cursor.execute("INSERT INTO customer_orders (customer_id, book_id, quantity) VALUES (?, ?, ?)",
                        (customer_id, book_id, quantity))
 
@@ -134,7 +124,6 @@ def place_order():
     finally:
         conn.close()
 
-# Record the transaction
 @app.route('/record_sale', methods=['POST'])
 def record_sale():
     data = request.json
@@ -158,7 +147,6 @@ def record_sale():
     finally:
         conn.close()
 
-# Database download endpoint
 @app.route('/download-db', methods=['GET'])
 def download_db():
     try:
