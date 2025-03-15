@@ -5,7 +5,7 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 DB_PATH = "bookstore.db"
-UPLOAD_FOLDER = 'C:/Users/keena/OneDrive/Documents/Colorado Technical University/CS492/Bookstore/Images'
+UPLOAD_FOLDER = 'static/uploads/'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Ensure the uploads folder exists
@@ -25,56 +25,32 @@ def get_db_connection():
 # Image Upload Endpoint
 @app.route('/upload-cover', methods=['POST'])
 def upload_cover():
-    if 'file' not in request.files or 'book_id' not in request.form:
-        return jsonify({'error': 'File and book_id are required'}), 400
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
 
     file = request.files['file']
-    book_id = request.form['book_id']
-
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
 
-    # Sanitize filename and rename using book_id for consistency
-    filename = f"book_{book_id}_{secure_filename(file.filename)}"
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(file_path)
+    if file:
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(file_path)
 
-    # Update the database with the file path
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    try:
-        cursor.execute("UPDATE books SET cover_image_path = ? WHERE id = ?", (file_path, book_id))
-        conn.commit()
+        # Return the file path for database storage
         return jsonify({'cover_image_path': file_path})
-
-    except Exception as e:
-        conn.rollback()
-        return jsonify({"error": str(e)}), 500
-
-    finally:
-        conn.close()
 
 # Provide Book Cover Images
 @app.route('/cover-image/<filename>')
 def get_cover_image(filename):
-    filename = secure_filename(filename)
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-# View book inventory with cover image URLs
+# View book inventory
 @app.route('/inventory', methods=['GET'])
 def get_inventory():
     conn = get_db_connection()
     books = conn.execute("SELECT id, book_title, stock_quantity, cover_image_path FROM books").fetchall()
     conn.close()
-
-    # Add URLs for each book cover image
-    for book in books:
-        if book['cover_image_path']:
-            book['cover_image_url'] = request.host_url + 'cover-image/' + os.path.basename(book['cover_image_path'])
-        else:
-            book['cover_image_url'] = None
-
     return jsonify([dict(book) for book in books])
 
 # Check stock prior to transaction
@@ -136,6 +112,8 @@ def record_sale():
 
     try:
         cursor.execute("BEGIN TRANSACTION;")
+
+        # Insert the sales record
         cursor.execute("INSERT INTO sales (order_id, book_id, quantity_sold, total_price) VALUES (?, ?, ?, ?)",
                        (order_id, book_id, quantity, total_price))
 
@@ -148,6 +126,57 @@ def record_sale():
 
     finally:
         conn.close()
+
+# Feedback Submission Endpoint
+@app.route('/submit-feedback', methods=['POST'])
+def submit_feedback():
+    data = request.json
+    book_id = data.get("book_id")
+    rating = data.get("rating")
+    comments = data.get("comments")
+
+    if not book_id or not rating or not comments:
+        return jsonify({"error": "All fields are required: book_id, rating, and comments"}), 400
+
+    if not 1 <= int(rating) <= 5:
+        return jsonify({"error": "Rating must be between 1 and 5"}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            INSERT INTO UserFeedback (book_id, rating, comments, feedback_date)
+            VALUES (?, ?, ?, DATE('now'))
+        """, (book_id, rating, comments))
+
+        conn.commit()
+        return jsonify({"message": "Feedback submitted successfully!"}), 201
+
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        conn.close()
+
+# Retrieve Feedback Endpoint (All Feedback or Specific Book)
+@app.route('/feedback', methods=['GET'])
+@app.route('/feedback/<int:book_id>', methods=['GET'])
+def get_feedback(book_id=None):
+    conn = get_db_connection()
+
+    if book_id:
+        feedback = conn.execute("SELECT * FROM UserFeedback WHERE book_id = ?", (book_id,)).fetchall()
+    else:
+        feedback = conn.execute("SELECT * FROM UserFeedback").fetchall()
+
+    conn.close()
+
+    if feedback:
+        return jsonify([dict(entry) for entry in feedback])
+    else:
+        return jsonify({"message": "No feedback found."}), 404
 
 # Database download endpoint
 @app.route('/download-db', methods=['GET'])
